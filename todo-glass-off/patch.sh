@@ -14,27 +14,26 @@
 # ============================================================
 set -uo pipefail
 
-TOOLKIT_VER="1.0"
-APP="${TODO_APP:-/Applications/Todo清单.app}"
-APP_NAME="$(basename "$APP" .app)"
-RES="$APP/Contents/Resources"
-ASAR="$RES/app.asar"
+TOOLKIT_VER="1.1"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BK="$HERE/backup"
 DO_VERIFY=1
 [ "${1:-}" = "--no-verify" ] && DO_VERIFY=0
 
+# shellcheck source=lib/env.sh
+. "$HERE/lib/env.sh"
+
 echo "Todo清单 皮肤工具包 v${TOOLKIT_VER}"
 
 # ---------- 环境检查 ----------
-command -v node >/dev/null 2>&1 || {
-  echo "✗ 未找到 Node.js（脚本用它解包/打包 app.asar）"
-  echo "  macOS 安装：brew install node   或  https://nodejs.org"
-  exit 1
-}
+# node 缺失 / 版本太旧时，自动装一份到 .tools/node（不需要 sudo）
+todo_require_node
 [ -f "$HERE/skin.css" ] || { echo "✗ 工具包不完整：缺少 skin.css"; exit 1; }
 [ -f "$HERE/lib/bake.js" ] || { echo "✗ 工具包不完整：缺少 lib/bake.js"; exit 1; }
-[ -d "$APP" ] || { echo "✗ 找不到应用：$APP"; echo "  可用 TODO_APP=\"...\" 指定路径"; exit 1; }
+todo_require_app
+APP_NAME="$(basename "$APP" .app)"
+RES="$APP/Contents/Resources"
+ASAR="$RES/app.asar"
 [ -f "$ASAR" ] || { echo "✗ 找不到 $ASAR（这个版本可能不是 Electron 应用）"; exit 1; }
 
 VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist" 2>/dev/null || echo unknown)
@@ -53,6 +52,7 @@ if [ "${1:-}" = "--diag" ]; then
   echo "含皮肤标记      : $([ "$HAS_SKIN" = 1 ] && echo '是' || echo '否（皮肤未打进包）')"
   echo "skin.css 指纹   : ${SKIN_SHA}"
   echo "上次安装指纹    : ${APPLIED_SHA}"
+  echo "Node.js        : $("${TODO_NODE}" -v)  ${TODO_NODE}"
   echo "备份            : $([ -f "$BK/app.asar.orig" ] && echo "$(stat -f%z "$BK/app.asar.orig") bytes（版本 $(cat "$BK/version" 2>/dev/null || echo '?')）" || echo '无')"
   exit 0
 fi
@@ -64,7 +64,7 @@ NEED=0
 [ "$SKIN_SHA" != "$APPLIED_SHA" ] && NEED=1
 if [ "$NEED" = 0 ]; then
   echo "✅ 补丁与皮肤都已是最新状态，无需重复操作"
-  if ! pgrep -f "$APP/Contents/MacOS" >/dev/null; then
+  if ! todo_app_running "$APP"; then
     echo "==> 应用没在运行，帮你启动"
     open -a "$APP"
   fi
@@ -74,9 +74,7 @@ echo "==> 待处理：$([ "$HAS_BG" = 1 ] && echo -n '关闭玻璃 ')$([ "$HAS_S
 
 # ---------- 退出应用 ----------
 echo "==> 退出 ${APP_NAME}"
-osascript -e "quit app \"$APP_NAME\"" 2>/dev/null
-for i in $(seq 1 20); do pgrep -f "$APP/Contents/MacOS" >/dev/null || break; sleep 0.5; done
-if pgrep -f "$APP/Contents/MacOS" >/dev/null; then
+if ! todo_quit_app "$APP"; then
   echo "✗ 应用未能退出，请手动退出后重试（未做任何修改）"; exit 1
 fi
 

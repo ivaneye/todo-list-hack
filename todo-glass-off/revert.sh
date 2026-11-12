@@ -8,13 +8,17 @@
 # ============================================================
 set -uo pipefail
 
-APP="${TODO_APP:-/Applications/Todo清单.app}"
-APP_NAME="$(basename "$APP" .app)"
-ASAR="$APP/Contents/Resources/app.asar"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BK="$HERE/backup"
 
-[ -d "$APP" ] || { echo "✗ 找不到应用：$APP"; exit 1; }
+# shellcheck source=lib/env.sh
+. "$HERE/lib/env.sh"
+
+todo_require_app
+APP_NAME="$(basename "$APP" .app)"
+ASAR="$APP/Contents/Resources/app.asar"
+
+[ -f "$ASAR" ] || { echo "✗ 找不到 $ASAR"; exit 1; }
 [ -f "$BK/app.asar.orig" ] || {
   echo "✗ 没有备份（$BK/app.asar.orig）"
   echo "  说明这台机器上还没打过补丁；要恢复官方版，直接删掉 App 重新安装即可。"
@@ -32,8 +36,7 @@ if [ "$VER" != "$BKVER" ]; then
 fi
 
 echo "==> 退出 ${APP_NAME}"
-osascript -e "quit app \"$APP_NAME\"" 2>/dev/null
-for i in $(seq 1 20); do pgrep -f "$APP/Contents/MacOS" >/dev/null || break; sleep 0.5; done
+todo_quit_app "$APP" || echo "   ⚠️ 应用没退出，继续尝试还原"
 
 echo "==> 还原 app.asar"
 cp "$BK/app.asar.orig" "$ASAR"
@@ -45,6 +48,7 @@ rm -f "$BK/skin.sha"
 
 if [ -f "$BK/bridge.enabled" ]; then
   echo "==> 之前启用了本地接口（todoctl），一并补回"
+  todo_require_node   # 补回需要重新打包 asar
   "$HERE/bridge.sh" install >/dev/null 2>&1 || echo "   ⚠️ 接口补回失败，请手动执行 ./bridge.sh install"
 fi
 

@@ -45,6 +45,21 @@ async function getPageTarget() {
     console.log(`  ${ok ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`);
   };
 
+  // 等页面真的渲染出来（刚启动时 DOM 还是空的，直接断言会误报）
+  let ready = false;
+  for (let i = 0; i < 40; i++) {
+    try {
+      ready = await evaluate(
+        '!!document.querySelector(".page__main") && document.querySelectorAll(".todo-list-item").length > 0'
+      );
+    } catch (e) {
+      ready = false;
+    }
+    if (ready) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!ready) console.log('  · 等待页面渲染超时，继续按当前状态检查');
+
   // 确保停在 Day Todo 页面
   await evaluate(`(async () => {
     const el = [...document.querySelectorAll(".sidebar-nav-item")].find(e => (e.innerText || "").includes("Day Todo"));

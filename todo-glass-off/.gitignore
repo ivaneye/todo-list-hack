@@ -1,5 +1,8 @@
 # 运行时生成的原始包备份，含官方 app.asar，不要提交/分发
 backup/
 
+# 自动安装的 Node.js（几百 MB，脚本会在需要时自己下载）
+.tools/
+
 # macOS
 .DS_Store
