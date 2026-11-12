@@ -1,0 +1,179 @@
+/* ===== Skin: macOS 26/27 (Tahoe) 风格 —— 纯视觉覆盖，不改结构 ===== */
+
+/* ---------- 0. 字体 ---------- */
+.app--todo,
+.app--todo * {
+  --fontFamilyBase: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --fontFamilyNumeric: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+}
+
+/* ---------- 1. 外壳：去掉泛灰 ---------- */
+.app--todo,
+.base-layout,
+.base-layout__main,
+.base-layout__container {
+  background: #f4f4f4 !important;
+}
+.base-layout__sidebar,
+.sidebar,
+.base-layout__footer,
+.tomato-timer,
+.page__header {
+  background: transparent !important;
+}
+html[data-theme="dark"] .app--todo,
+html[data-theme="dark"] .base-layout,
+html[data-theme="dark"] .base-layout__main,
+html[data-theme="dark"] .base-layout__container {
+  background: #2e2e2e !important;
+}
+
+
+/* 暗色：整体抬亮（#1c1c1c 纯黑太压抑）
+   外壳 #2e2e2e / 表面 #3a3a3a，卡片、日期条、输入框、编辑面板统一同一表面色。
+   想更亮一档：外壳 #363636、表面 #424242 */
+html[data-theme="dark"] .base-layout__content,
+html[data-theme="dark"] .base-layout__footer,
+html[data-theme="dark"] .base-layout__sidebar {
+  --colorNeutralBackground1: #3a3a3a !important;
+}
+
+/* ---------- 2. 内容主卡片（所有页面） ---------- */
+.todo-page-surface {
+  border: none !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.055),
+    0 1px 2px rgba(0, 0, 0, 0.035),
+    0 12px 28px -8px rgba(0, 0, 0, 0.07) !important;
+  /* 不能用 overflow:hidden：.todo-page-surface 本身就是滚动容器，会导致鼠标滚轮失灵。
+     用 clip-path 实现圆角裁切，不影响滚动 */
+  clip-path: inset(0 round 14px);
+}
+html[data-theme="dark"] .todo-page-surface {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.07),
+    0 12px 28px -8px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ---------- 3. 顶部日期条 / 输入框 ---------- */
+.month-date-picker,
+.todo-input-add {
+  border: none !important;
+  border-radius: 12px !important;
+  /* 跟随应用自己的表面色，明暗两套都与内容卡片完全一致 */
+  background: var(--colorNeutralBackground1) !important;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+html[data-theme="dark"] .month-date-picker,
+html[data-theme="dark"] .todo-input-add {
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08) !important;
+}
+.month-date-picker__days .fui-Button,
+.todo-input-add .fui-Button {
+  border-radius: 8px !important;
+}
+
+/* ---------- 4. 待办列表：去分割线，行悬停成圆角 ---------- */
+.todo-list,
+.todo-virtual-rows {
+  background: transparent !important;
+}
+.todo-list-item {
+  border-bottom-color: transparent !important;
+  border-radius: 10px !important;
+  margin: 0 6px !important;
+  transition: background-color 0.12s ease;
+}
+.todo-list-item:hover {
+  background: rgba(0, 0, 0, 0.035) !important;
+}
+html[data-theme="dark"] .todo-list-item:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ---------- 5. 侧边栏 ---------- */
+.sidebar-nav-item {
+  border-radius: 8px !important;
+  margin-left: 8px !important;
+  margin-right: 8px !important;
+}
+.sidebar-nav-item--active {
+  background: rgba(0, 0, 0, 0.055) !important;
+}
+html[data-theme="dark"] .sidebar-nav-item--active {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ---------- 6. 按钮 / 输入框圆角 ---------- */
+.fui-Button {
+  border-radius: 8px !important;
+}
+.fui-Input,
+.fui-SearchBox {
+  border-radius: 8px !important;
+}
+.todo-input-add__input,
+.main-nav-search {
+  border-radius: 8px !important;
+}
+.tomato-timer .fui-Button {
+  border-radius: 10px !important;
+}
+
+/* ---------- 7. 日历（FullCalendar） ---------- */
+.custom-calendar,
+.calendar-container {
+  --fc-border-color: rgba(0, 0, 0, 0.06);
+  --fc-page-bg-color: transparent;
+}
+html[data-theme="dark"] .custom-calendar,
+html[data-theme="dark"] .calendar-container {
+  --fc-border-color: rgba(255, 255, 255, 0.09);
+}
+.fc-daygrid-event,
+.fc-timegrid-event {
+  border-radius: 6px !important;
+}
+.fc-daygrid-event {
+  margin: 1px 2px !important;
+}
+.fc-col-header-cell {
+  background: transparent !important;
+  font-weight: 500;
+}
+
+
+/* ---------- 10. 右侧编辑面板：与主卡片同款圆角 ---------- */
+.right-sidebar__content {
+  border: none !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.055),
+    0 1px 2px rgba(0, 0, 0, 0.035),
+    0 12px 28px -8px rgba(0, 0, 0, 0.07) !important;
+}
+html[data-theme="dark"] .right-sidebar__content {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.07),
+    0 12px 28px -8px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ---------- 8. 滚动条：细胶囊 ---------- */
+.os-scrollbar-handle {
+  border-radius: 999px !important;
+  background: rgba(0, 0, 0, 0.16) !important;
+}
+html[data-theme="dark"] .os-scrollbar-handle {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* ---------- 9. 弹层 / 菜单 ---------- */
+.fui-PopoverSurface,
+.fluent-popover-surface,
+.fui-DialogSurface,
+.fui-MenuSurface {
+  border-radius: 12px !important;
+}

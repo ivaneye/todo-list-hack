@@ -1,0 +1,5 @@
+# 运行时生成的原始包备份，含官方 app.asar，不要提交/分发
+backup/
+
+# macOS
+.DS_Store
