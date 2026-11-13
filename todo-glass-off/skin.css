@@ -232,9 +232,9 @@ html[data-theme="dark"] .todo-category-more button:hover {
   content: attr(aria-label);
   position: absolute;
   z-index: 60;
-  top: calc(100% + 6px);
+  top: calc(100% + 10px); /* 往下 10px、高度 24px，刚好盖住整行标题，避免只遮住半行字 */
   left: 0;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 6px;
   font-size: 12px;
   line-height: 16px;
