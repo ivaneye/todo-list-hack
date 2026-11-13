@@ -154,12 +154,6 @@ if [ -d "$UD" ]; then
   echo "==> 已清理渲染缓存"
 fi
 
-# 之前开过本地接口（todoctl 用）就自动补回，避免被本次 asar 重打包覆盖
-if [ -f "$BK/bridge.enabled" ] && ! grep -a -q '@todo-bridge' "$ASAR"; then
-  echo "==> 检测到之前启用的本地接口，自动补回"
-  "$HERE/bridge.sh" install >/dev/null 2>&1 || echo "   ⚠️ 本地接口补回失败，请手动执行 ./bridge.sh install"
-fi
-
 if [ "$DO_VERIFY" = 1 ]; then
   echo "==> 自检（滚轮 / 皮肤 / 玻璃）"
   if "$HERE/verify.sh"; then

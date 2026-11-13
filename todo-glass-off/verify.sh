@@ -26,7 +26,7 @@ if ! todo_quit_app "$APP"; then
 fi
 
 # 端口：优先用指定的；否则自动挑一个空闲的（避免 9222 被 VS Code 等占着）。
-# 注意：如果装了本地接口（./bridge.sh install），App 会强制开随机端口，
+# 注意：如果 App 启动时带了 --inspect 之外的调试参数，App 会强制开随机端口，
 # 真实端口以 App 写出的 DevToolsActivePort 为准，所以启动后再读一次。
 REQ_PORT="${PORT:-$(todo_free_port)}"
 PORTFILE="$HOME/Library/Application Support/todo-list/DevToolsActivePort"

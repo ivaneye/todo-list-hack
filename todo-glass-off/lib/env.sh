@@ -2,7 +2,7 @@
 # ============================================================
 #  lib/env.sh —— 各脚本共用的环境准备
 #
-#  用法（在 patch.sh / revert.sh / verify.sh / bridge.sh 里）：
+#  用法（在 patch.sh / revert.sh / verify.sh 里）：
 #      HERE="$(cd "$(dirname "$0")" && pwd)"
 #      . "$HERE/lib/env.sh"
 #      todo_require_node
@@ -141,7 +141,7 @@ todo_require_node() {
     TODO_NODE="$TODO_TOOLS/node/bin/node"
   fi
   export TODO_NODE
-  # 让脚本里所有 `node xxx` 都用到同一个版本（含被 patch.sh 调起的 verify.sh / bridge.sh）
+  # 让脚本里所有 `node xxx` 都用到同一个版本（含被 patch.sh 调起的 verify.sh）
   export PATH="$(dirname "$TODO_NODE"):$PATH"
 }
 

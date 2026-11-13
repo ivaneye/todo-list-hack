@@ -46,12 +46,6 @@ if ! codesign --force --deep --sign - "$APP" || ! codesign --verify "$APP"; then
 fi
 rm -f "$BK/skin.sha"
 
-if [ -f "$BK/bridge.enabled" ]; then
-  echo "==> 之前启用了本地接口（todoctl），一并补回"
-  todo_require_node   # 补回需要重新打包 asar
-  "$HERE/bridge.sh" install >/dev/null 2>&1 || echo "   ⚠️ 接口补回失败，请手动执行 ./bridge.sh install"
-fi
-
 echo "==> 启动"
 open -a "$APP"
 echo "✅ 已还原官方原版（毛玻璃回来了，皮肤已去掉）"
