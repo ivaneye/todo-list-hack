@@ -177,3 +177,85 @@ html[data-theme="dark"] .os-scrollbar-handle {
 .fui-MenuSurface {
   border-radius: 12px !important;
 }
+
+/* ---------- 11. 分类快选 chip（右侧编辑面板右上角那排胶囊） ----------
+   App 原逻辑：选中态「文字色」= 分类色 lighten(35)，「背景」= 同一个分类色 40%，
+   同源叠同源 → 实测对比度 1.05:1。且分组内子清单颜色按 100/80/60/40% 递减，
+   第 4 个及以后的清单（工作·汇报与述职、家庭·周期事务、教育·英语…）几乎完全不可见。
+   这里把文字色与分类色解耦，保留薄荷底作为选中标识。 */
+.todo-category-choice button {
+  position: relative;
+  overflow: visible !important; /* 为下面的全名气泡留出溢出 */
+}
+.todo-category-choice__label {
+  color: #4a4a4a !important; /* 未选中：#a096a0 on #f5f4f5 = 2.6:1 → 8.1:1 */
+}
+.todo-category-choice button[aria-pressed="true"] .todo-category-choice__label {
+  color: #0a4f50 !important; /* 叠在 rgb(160,221,222) 上 → 6.2:1 */
+  font-weight: 500 !important;
+}
+.todo-category-choice button[aria-pressed="false"]:hover .todo-category-choice__label {
+  color: #1f1f1f !important;
+}
+/* 暗色：选中胶囊文字翻亮；未选中胶囊 App 把底色写死成 #f5f4f5，改成半透明白 */
+html[data-theme="dark"] .todo-category-choice button[aria-pressed="true"] .todo-category-choice__label {
+  color: #eafcfc !important; /* 叠在 rgba(17,171,172,.4) 上 → 6.1:1 */
+}
+html[data-theme="dark"] .todo-category-choice button[aria-pressed="false"] {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+html[data-theme="dark"] .todo-category-choice button[aria-pressed="false"] .todo-category-choice__label {
+  color: #cfcfcf !important;
+}
+html[data-theme="dark"] .todo-category-choice button[aria-pressed="false"]:hover .todo-category-choice__label {
+  color: #ffffff !important;
+}
+html[data-theme="dark"] .todo-category-more button {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #cfcfcf !important;
+}
+html[data-theme="dark"] .todo-category-more button:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+/* 全名气泡：App 会把名字截到 3 字（labelLength 自适应算法），悬停 0.35s 后用 aria-label 补全
+   注意两个坑：
+   1) 底色必须不透明 —— 半透明会让底下待办的标题透上来；
+   2) 必须抬高层级 —— 标题所在的 CodeMirror 是 `.cm-scroller{position:relative;z-index:0}`，
+      同级里会盖住 z-index:auto 的 chip（按钮 hover 时的 filter 又建了新层叠上下文），
+      只给 ::after 写 z-index 是跑不出去的，所以抬整个 header。 */
+.right-sidebar__content__header {
+  position: relative;
+  z-index: 2;
+}
+.todo-category-choice button::after {
+  content: attr(aria-label);
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  background: #2b2b2b; /* 必须不透明：半透明会让底下的待办标题“穿透”到气泡上 */
+  color: #fff;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.08),
+    0 6px 20px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 0.12s ease 0.35s;
+  pointer-events: none;
+}
+.todo-category-choice button:hover::after {
+  opacity: 1;
+}
+/* 暗色：气泡要比面板(#292929)再亮一档，否则和背景糊在一起 */
+html[data-theme="dark"] .todo-category-choice button::after {
+  background: #404040;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.14),
+    0 6px 20px rgba(0, 0, 0, 0.5);
+}
