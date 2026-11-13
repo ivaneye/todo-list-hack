@@ -50,6 +50,15 @@ TODO_APP="/Users/xxx/Applications/Todo清单.app" ./patch.sh
 
 ## 三、改了哪些东西
 
+前后对比（亮色 / 暗色，左官方原版、右打补丁后）：
+
+| 主题 | 官方原版 | 打补丁后 |
+|---|---|---|
+| 亮色 | ![亮色·官方原版](../docs/images/light-before.png) | ![亮色·打补丁后](../docs/images/light-after.png) |
+| 暗色 | ![暗色·官方原版](../docs/images/dark-before.png) | ![暗色·打补丁后](../docs/images/dark-after.png) |
+
+更详细的对比说明见仓库根 `../README.md` 第二节。
+
 | 文件 | 改动 |
 |---|---|
 | `app.asar → background.js` | macOS 分支 `{vibrancy:"titlebar", backgroundColor:"#00000000"}` → 实心背景 `{backgroundColor:"#202020"/"#f3f3f3"}`，窗口不再透明 |
