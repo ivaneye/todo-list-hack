@@ -1,5 +1,7 @@
 # Todo清单（macOS）优化补丁 · todo-list-hack
 
+> **有问题 / 想反馈 / 想要定制？加我微信：`PageClear`**（备注：Todo清单）
+
 给 **[Todo清单](https://todo.evestudio.cn/)**（EveStudio / 杭州乾夕科技）的 **macOS 桌面客户端**
 打的一层**纯本地视觉优化补丁**：关掉主窗口的原生毛玻璃，套一套 macOS 26/27（Tahoe）风格皮肤。
 
@@ -7,6 +9,15 @@
 - 适配版本：**Todo清单 4.0.x macOS 桌面版**（Electron 打包，默认安装在 `/Applications/Todo清单.app`）
 - 技术手段：解开 App 包里的 `app.asar` → 改**一行窗口参数** + 在 `css/index.*.css` 末尾**追加一段 CSS** → 重新打包并 ad-hoc 重签名
 - 不改业务逻辑、不联网、不上传任何数据；与官方无关，属第三方个人修改
+
+---
+
+## 📮 联系方式
+
+| 渠道 | 信息 |
+|---|---|
+| **微信（最快）** | **`PageClear`** ← 复制搜索，加好友时请备注「Todo清单」 |
+| 仓库 | <https://github.com/ivaneye/todo-list-hack> |
 
 ---
 
@@ -111,9 +122,7 @@ todo-list-hack/
     │   ├── env.sh             # 公共环境：找 Node.js / 缺了自动装 / App 定位 / 空闲端口
     │   ├── asar-tool.js       # 无依赖 asar 解包 / 打包 / 差异校验
     │   ├── bake.js            # 注入窗口参数与皮肤（带皮肤安全检查）
-    │   ├── verify.js          # 体检实现（CDP，真实滚轮事件）
-    │   └── inject-bridge.js   # 可选：注入本地调试端口开关
-    ├── bridge.sh              # 可选：打开/关闭本地自动化接口（127.0.0.1）
+    │   └── verify.js          # 体检实现（CDP，真实滚轮事件）
     ├── dev/                   # 调试辅助（CDP 客户端、截图、预览），日常用不到
     ├── backup/                # 运行时生成：原始 app.asar / 版本 / 皮肤指纹（不进 git）
     └── .tools/                # 运行时生成：自动安装的 Node.js（不进 git）
@@ -125,7 +134,6 @@ todo-list-hack/
 |---|---|---|
 | `app.asar → background.js` | macOS 分支窗口选项 `{backgroundColor:"#00000000", vibrancy:"titlebar", visualEffectState:"followWindow"}` → `{backgroundColor: 亮色/暗色实色}` | **一行** |
 | `app.asar → css/index.*.css` | 末尾追加 `skin.css`，用 `/* @macos-skin start */ … end` 包裹 | 一段 CSS |
-| `app.asar → background.js`（可选） | `./bridge.sh install` 时才注入 `appendSwitch("remote-debugging-port","0")` | 一行 |
 
 一次完整流程的安全性设计：
 
@@ -154,22 +162,20 @@ todo-list-hack/
 | 打完还是原本的样子 | `./patch.sh --diag` 看「含皮肤标记」：否 = 没打进去（多半跑的是另一份脚本副本）；是但仍没变化 = 缓存，`./verify.sh` 再重启一次 |
 | 圆角有但滚轮失灵 | 皮肤给滚动容器加了 `overflow:hidden`，`bake.js` 已内置拦截；改完 `skin.css` 重跑 |
 | 列表滚错位 | 给 `.todo-list-item` 改了竖向 margin/padding（虚拟列表按行高算），已内置拦截 |
-| 体检连不上调试端口 | 已改为**自动挑空闲端口**；若装了本地接口（`./bridge.sh install`）App 会自己开随机端口，脚本会读 `DevToolsActivePort` 校正 |
+| 体检连不上调试端口 | 已改为**自动挑空闲端口**；若 App 启动时本身带了调试参数，脚本会读 `DevToolsActivePort` 校正 |
 | 想换配色 | 只改 `skin.css` 顶部两处 `background`，再 `./patch.sh`（按文件指纹判断要不要重烘） |
 | App 升级后没皮肤了 | 正常，重跑 `./patch.sh`（会自动重新备份新版本原始包） |
 
-## 八、可选：命令行 / 对话式管理待办
+## 八、命令行 / 对话式管理待办（CLI 在另一个目录）
 
-同一套 asar 工具还能给 App 开一个**只绑 127.0.0.1** 的本地调试端口，从而用命令行/自然语言操作待办
-（查、增、改、完成、删除、子任务、标签、番茄……走的都是 App 自己的 Vuex action，和你点按钮同一条代码路径）。
+`todoctl`（见 `../cli/`）可以查、增、改、完成、删除、子任务、标签、番茄……走的是 App 自己的
+Vuex action，和你点按钮同一条代码路径。它**不需要改 App**，因此和本仓库的皮肤补丁互不影响：
 
-```bash
-./bridge.sh install     # 打开本地接口（约 20s，含重启）
-./bridge.sh status      # 看状态与端口
-./bridge.sh uninstall   # 关掉
-```
+- 查询：直接读 App 的数据文件（`todos.db` + `critical-state-backup.json`），App 都不用开
+- 写入：用 Electron 主进程的 `--inspect` 本地接口，临时启动/重启 App，**不改 asar、不重签**
 
-对应的 CLI（`todoctl`）**未包含在本仓库**，需要另行获取；`bridge.sh` 只负责开关接口。
+> 早期的「CDP 补丁」方案（`./bridge.sh install` 往 `background.js` 里塞 `remote-debugging-port`）
+> 已经删除——它需要改 asar + 重签、App 升级后失效，而且等于给本机任何进程开了调试端口。
 
 ## 九、维护者备忘（踩过的坑）
 
@@ -179,10 +185,12 @@ todo-list-hack/
 | 给 `.todo-list-item` 加竖向 margin/padding | 虚拟列表高度算错、滚动错位 | 只允许水平 `margin: 0 6px` |
 | 原地改 CSS 但文件名不变 | 命中 Chromium 磁盘缓存，样式不生效 | 装完清 `Cache` / `Code Cache`（已内置） |
 | macOS 自带 bash 是 3.2 | `$VAR` 紧跟全角括号（如 `$X）`）→ `unbound variable` 中途退出，出现"半套补丁" | 一律写 `${VAR}` |
-| macOS 12+ 不带 `python3` | 老版本 `bridge.sh` 在干净机器上直接失败 | 改用 Node 注入（`lib/inject-bridge.js`），字节级原样往返 |
+| macOS 12+ 不带 `python3` | 老版本注入脚本在干净机器上直接失败 | 现在只用 Node（`lib/asar-tool.js`），字节级原样往返 |
 | 体检硬编码 9222 | 端口被 VS Code 等占用就连不上 | 自动挑空闲端口 + 读 `DevToolsActivePort` 校正 |
 | 用两份脚本副本 | 一份装了一套，另一份又覆盖 | 只在同一目录维护，装完看「安装后断言」 |
 
 ---
+
+**联系我**：微信 `PageClear`（备注「Todo清单」）。
 
 **License**：脚本与皮肤（本仓库代码）MIT。修改的是你本机安装的 App，官方应用版权归 EveStudio 所有。
