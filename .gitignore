@@ -1,4 +1,3 @@
-# 本仓库只提交 todo-glass-off/ 子目录
-cli/
+# 忽略规则（todo-glass-off/.gitignore 里另有关于此目录运行时产物的规则）
 *.html
 .DS_Store

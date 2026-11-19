@@ -1,0 +1,539 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * todoctl —— Todo清单 的命令行 / 对话式操作入口
+ *
+ * 两个驱动，自动选择：
+ *   N1 文件只读（默认用于查询）  读 todos.db + critical-state-backup.json，
+ *                                 不需要 App 在跑、不需要端口、不需要安装
+ *   N2 主进程 inspect（用于写入）  App 未开接口时自动带 --inspect 启动/重启一次，
+ *                                 再调 App 自己的 Vuex action（与点按钮同一条路径）
+ *
+ * 只有这两个驱动；CDP / 改 asar 的老方案已删除。
+ */
+const path = require('path');
+const Inspect = require('./lib/inspect');
+const Platform = require('./lib/platform');
+const { FileSession } = require('./lib/filedb');
+const Persist = require('./lib/persist');
+const C = require('./lib/commands');
+
+// 输出被 head/grep 提前关闭时不要崩
+process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0); });
+
+const HELP = `todoctl —— 管理 Todo清单 的待办（对话式 / 命令行）
+
+查询
+  ./todoctl list                    今天未完成
+  ./todoctl list --all              全部未完成
+  ./todoctl list --date tomorrow    明天
+  ./todoctl list --date 2026-11-15  指定日期
+  ./todoctl list --date none        无日期的（待办箱）
+  ./todoctl list --done             已完成（今天）
+  ./todoctl list --with-done        含已完成
+  ./todoctl list --cat 研发管理 --tag 二宝 --search 复盘 --limit 20   （--cat 也可写分组名，自动展开）
+  ./todoctl list --from 2026-11-01 --to 2026-11-30   # 日期区间
+  ./todoctl list --month 2026-11                            # 整月
+  ./todoctl show 复盘               单条详情（含原始字段）
+  ./todoctl overdue                 逾期未完成
+  ./todoctl trash                   回收站
+  ./todoctl search 关键词            全局搜索（含已完成）
+
+新增 / 修改
+  ./todoctl add "写周报" --cat 汇报与述职 --date tomorrow   （--cat 必须写清单名：分组名会报错）
+  ./todoctl add "重构支付" --desc "先梳理依赖" --sub "画流程图;改代码" --difficulty 中等 --cat 研发管理
+  ./todoctl add "体检" --date 2026-12-01 --remind 09:30 --tag 健康 --cat 身体
+  ./todoctl add "站会" --repeat week --count 12 --remind 09:30     （周期任务：展开成多条）
+  ./todoctl add "吃药" --repeat day:1 --until 2026-12-31
+  ./todoctl remind 复盘 09:30         设置提醒（--off 取消；--date 指定日期）
+  ./todoctl repeats                   重复组列表（组内条数/未完成/起止日期）
+  ./todoctl repeat rm <目标> [--yes]   删除整个重复组（先预览条数，--yes 才执行）
+  ./todoctl done|undone|rm|remind|edit|restore ... --all   对匹配到的所有条目批量执行
+  ./todoctl edit 写周报 --content "写周报（周更）" --date 2026-11-15 --cat 研发管理
+  ./todoctl edit 写周报 --sub "a;x:b"        （x: 表示已完成）
+  ./todoctl tag 写周报 --add 工作 --del 旧标签       （加/减标签）
+
+状态
+  ./todoctl done 复盘                 标记完成（支持 taskId 前缀或内容关键词）
+  ./todoctl undone 复盘
+  ./todoctl rm 复盘                   删除 → 回收站
+  ./todoctl restore 复盘              从回收站恢复
+  ./todoctl rm 复盘 --purge           彻底删除（仅回收站内的条目；不可撤销）
+  ./todoctl trash --clear --yes       清空回收站
+  ./todoctl top 复盘 / ./todoctl bottom 复盘    置顶 / 置底
+  ./todoctl carry                     把「昨天未完成」挪到今天（--from/--date 可改）
+
+子任务
+  ./todoctl subs 本体可视化            列出子任务
+  ./todoctl sub 本体可视化 okf-instance 勾选子任务（--undone 取消）
+  ./todoctl sub add 本体可视化 补充验收   新增子任务
+  ./todoctl sub rm 本体可视化 补充验收    删除子任务
+
+组织 / 标签
+  ./todoctl folders                  分组列表（树状：分组 → 清单 → 未完成数）
+  ./todoctl folder add 新分组 --color "#4f9cf9"
+  ./todoctl folder rename 旧名 新名
+  ./todoctl folder rm 分组名             （分组里必须没有清单；先 cat move 移出）
+  ./todoctl cats                     清单列表（含未完成数量）
+  ./todoctl cat add 新清单 --color "#4f9cf9"
+  ./todoctl cat rename 旧名 新名
+  ./todoctl cat rm 清单名
+  ./todoctl cat move 清单名 --to 分组名|none   （把清单移进/移出分组）
+  ./todoctl tags                     标签统计（标签=内容里的 #@名字）
+  ./todoctl tag 复盘 --add 工作 --del 旧标签        给某条待办加/减标签
+
+统计 / 番茄 / 设置
+  ./todoctl stats                    今日/逾期/无日期/回收站/番茄 概览
+  ./todoctl tomato                   番茄钟状态与今日记录
+  ./todoctl settings [key]           读取设置
+  ./todoctl settings set 键 值        写设置（写 store + localStorage，主题会同步主进程）
+  ./todoctl report yesterday|week|todo|tomato   云端报表
+  ./todoctl export --format csv|json --out 文件  本地导出（--xlsx 走 App 的保存对话框）
+  ./todoctl notify "标题" "正文"       发一条系统通知
+
+App / 接口
+  ./todoctl app status               平台、App 路径、数据目录、是否运行、接口端口、文件时间
+  ./todoctl app start                带本地接口启动（已在运行则不动）
+  ./todoctl app restart              重启并开启本地接口
+  ./todoctl app quit                 退出 App（恢复"没有接口"的干净状态）
+  ./todoctl app persist on|off|status  可选：登录即带接口启动（省掉"每次启动后首次写"的重启）
+                                      只写你自己的启动项，不动 App；三平台各自实现
+
+底层
+  ./todoctl raw 'window.vuexStore.state.todo.todoList.length'
+
+驱动（自动选择，一般不用管）
+  查询 → 直接读本地文件（todos.db + critical-state-backup.json），App 关着也能查
+  写入 → 主进程接口；没开就自动带 --inspect 启动，App 在跑则先优雅重启一次
+  --live              强制连 App（即使只是查询）
+  --no-restart        禁止自动重启（App 在跑但没接口时直接报错）
+  --port 9331         指定本地接口端口（默认 9331，或 TODO_INSPECT_PORT）
+
+通用：所有命令默认输出 JSON；--table 输出表格。目标可用 taskId 前缀或内容关键词。
+`;
+
+function parseArgs(argv) {
+  const positional = [];
+  const flags = {};
+  let stop = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (stop) {
+      positional.push(a);
+      continue;
+    }
+    if (a === '--') {
+      stop = true;
+      continue;
+    }
+    if (a.startsWith('--') || a.startsWith('-')) {
+      const raw = a.replace(/^--?/, '');
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('--')) flags[raw] = true;
+      else {
+        flags[raw] = next;
+        i++;
+      }
+    } else positional.push(a);
+  }
+  return { positional, flags };
+}
+
+function table(items, flags) {
+  if (!items.length) return console.log('（没有待办）');
+  const w = Math.min(52, Math.max(...items.map((i) => (i.content || '').length), 6));
+  for (const i of items) {
+    const state = i.deleted ? '🗑' : i.done ? '✓' : '○';
+    const extra = [
+      i.date || '无日期',
+      i.cat,
+      i.subProgress ? '子任务 ' + i.subProgress : '',
+      i.tags && i.tags.length ? i.tags.map((t) => '#' + t).join(' ') : '',
+    ].filter(Boolean).join('  ');
+    console.log(`${state} ${(i.content || '').slice(0, w).padEnd(w)}  ${extra}  ${i.id}`);
+  }
+  console.log(`\n共 ${items.length} 条`);
+}
+
+function output(result, flags, kind) {
+  if (flags.table) {
+    if (kind === 'items' && result && result.items) return table(result.items, flags);
+    if (kind === 'folders' && result && result.folders) {
+      result.folders.forEach((f) => {
+        console.log(`📁 ${f.name}   未完成 ${f.open}（${f.listCount} 个清单）  ${f.id}`);
+        f.lists.forEach((k) => console.log(`     └ ${k.name.padEnd(14)} 未完成 ${k.open}`));
+      });
+      if (result.looseLists && result.looseLists.length) {
+        console.log('\n未归入分组的清单：');
+        result.looseLists.forEach((c) => console.log(`📄 ${c.name.padEnd(14)} 未完成 ${c.open}`));
+      }
+      if (result.emptyFolders && result.emptyFolders.length) {
+        console.log(`\n空分组：${result.emptyFolders.join('、')}（用 --all 显示）`);
+      }
+      return;
+    }
+    if (kind === 'repeats' && result && result.groups) {
+      result.groups.forEach((g) => {
+        console.log(`🔁 ${(g.content || '').slice(0, 40).padEnd(40)} 共 ${String(g.total).padStart(3)} 条  未完成 ${String(g.open).padStart(3)}  ${g.first} → ${g.last}`);
+      });
+      console.log(`\n共 ${result.count} 组`);
+      return;
+    }
+    if (kind === 'cats' && result && result.categories) {
+      result.categories.forEach((c) =>
+        console.log(`${c.isFolder ? '📁' : '📄'} ${c.name.padEnd(16)} 未完成 ${c.open}\t${c.id}${c.folderId ? '  (在分组 ' + c.folderId + ')' : ''}`)
+      );
+      return;
+    }
+    if (kind === 'tags' && result && result.tags) {
+      result.tags.forEach((t) => console.log(`#${t.tag.padEnd(16)} 未完成 ${t.open} / 共 ${t.total}`));
+      return;
+    }
+    if (kind === 'subs' && result && result.subs) {
+      console.log(`${result.content}  (${result.progress})`);
+      result.subs.forEach((x, i) => console.log(`  ${i + 1}. ${x.done ? '✓' : '○'} ${x.text}`));
+      return;
+    }
+  }
+  console.log(JSON.stringify(result, null, 2));
+}
+
+
+/* ---------------- 驱动选择 ---------------- */
+
+/** 只依赖读取能力的命令（可用 N1 文件驱动） */
+function isReadOnly(cmd, rest, flags) {
+  const WRITE = new Set([
+    'add', 'new', 'edit', 'update', 'done', 'complete', 'undone', 'undo', 'rm', 'delete', 'del',
+    'restore', 'carry', 'top', 'bottom', 'sub', 'remind', 'repeat', 'folder', 'cat', 'tag',
+    'notify', 'report', 'raw', 'app',
+  ]);
+  if (WRITE.has(cmd)) return false;
+  if (cmd === 'trash') return !flags.clear;
+  if (cmd === 'settings') return rest[0] !== 'set';
+  if (cmd === 'export') return !flags.xlsx;
+  return true; // list / show / subs / cats / folders / tags / stats / tomato / search / overdue / repeats
+}
+
+const log = (msg) => process.stderr.write(msg + '\n');
+
+/**
+ * 拿到一个连着 App 的会话（N2 inspect 驱动）。
+ *   1. 接口已经开着 → 直接用
+ *   2. App 没运行   → 带 --inspect 启动
+ *   3. App 在运行但没开接口 → 优雅退出后带 --inspect 重新启动（数据先落盘/同步）
+ */
+async function openLive(flags = {}) {
+  const port = Number(flags.port || Inspect.DEFAULT_PORT);
+  const existing = await Inspect.Session.tryOpen(port);
+  if (existing) return existing;
+
+  const app = Platform.locateApp();
+  if (!app) {
+    throw new Error('找不到 Todo清单 的安装位置；可用 TODO_APP=/path/to/app 指定');
+  }
+
+  const running = Platform.isRunning();
+  if (running && flags['no-restart']) {
+    throw new Error('Todo清单 正在运行但没开本地接口；去掉 --no-restart，或执行 ./todoctl app restart');
+  }
+
+  const started = Date.now();
+  if (running) {
+    log('↻ Todo清单 在运行但没有本地接口，正在重启一次以开启（会先落盘/同步）…');
+    Platform.quit();
+    if (!(await Platform.waitExit(12000))) {
+      throw new Error('退出超时：请手动退出 Todo清单 后重试');
+    }
+  } else {
+    log('▸ Todo清单 没在运行，带本地接口启动…');
+  }
+
+  const launched = Platform.launchWithInspect(port);
+  log('  ' + launched.cmd);
+  const s = await Inspect.Session.open({ port, timeoutMs: 40000 });
+  await s.waitRenderer();
+  log('✓ 已连上 App 主进程（127.0.0.1:' + port + '，' + (Date.now() - started) + 'ms）');
+  return s;
+}
+
+/** ./todoctl app status|start|restart|quit —— 管理 App 与本地接口 */
+async function appCommand(action, flags, extra) {
+  const port = Number(flags.port || Inspect.DEFAULT_PORT);
+  const app = Platform.locateApp();
+  const bin = Platform.binaryPath();
+  const userData = Platform.userDataDir();
+  const running = Platform.isRunning();
+
+  if (action === 'persist') {
+    const sub = String(extra || 'status').toLowerCase();
+    if (sub === 'on' || sub === 'install') {
+      const r = Persist.on(port);
+      if (r.appAutostart === true) {
+        log('! App 设置里的「开机自启」是开着的，会和启动项抢；建议在 App 设置里关掉它');
+      }
+      if (!(await Inspect.Session.probe(port))) {
+        if (Platform.isRunning()) {
+          r.hint = '当前实例还没接口：./todoctl app restart 可立即生效（否则下次登录生效）';
+        } else {
+          Platform.launchWithInspect(port);
+          r.hint = '已顺带带接口启动当前实例';
+        }
+      }
+      return r;
+    }
+    if (sub === 'off' || sub === 'uninstall' || sub === 'rm') return Persist.off();
+    if (sub !== 'status') throw new Error('用法: ./todoctl app persist on|off|status');
+    const st = Persist.status(port);
+    st.inspectAlive = !!(await Inspect.Session.probe(port));
+    return st;
+  }
+
+  if (action === 'quit') {
+    Platform.quit();
+    const ok = await Platform.waitExit(12000);
+    return { ok, action: 'quit', running: Platform.isRunning() };
+  }
+
+  if (action === 'restart') {
+    if (running) {
+      Platform.quit();
+      if (!(await Platform.waitExit(12000))) throw new Error('退出超时：请手动退出 Todo清单 后重试');
+    }
+    const launched = Platform.launchWithInspect(port);
+    log('  ' + launched.cmd);
+    const s = await Inspect.Session.open({ port, timeoutMs: 40000 });
+    const info = await s.evalMain(`(function(){ 
+      var R = typeof require === 'function' ? require : module.require.bind(module);
+      var A = R('electron').app;
+      return { appVersion: A.getVersion(), electron: process.versions.electron, node: process.versions.node, userData: A.getPath('userData') };
+    })()`).catch(() => null);
+    s.close();
+    return { ok: true, action: 'restart', port, running: Platform.isRunning(), app: info };
+  }
+
+  if (action === 'start') {
+    if (running) {
+      const alive = !!(await Inspect.Session.probe(port));
+      return { ok: true, action: 'start', alreadyRunning: true, inspect: alive, port };
+    }
+    const launched = Platform.launchWithInspect(port);
+    log('  ' + launched.cmd);
+    const s = await Inspect.Session.open({ port, timeoutMs: 40000 });
+    s.close();
+    return { ok: true, action: 'start', port, running: true, inspect: true };
+  }
+
+  // status
+  const files = {};
+  for (const f of ['todos.db', 'todos.db-wal', 'critical-state-backup.json', 'DevToolsActivePort']) {
+    try {
+      const st = require('fs').statSync(path.join(userData, f));
+      files[f] = { bytes: st.size, mtime: st.mtime.toISOString() };
+    } catch (e) {
+      files[f] = null;
+    }
+  }
+  return {
+    ok: true,
+    platform: Platform.PLATFORM,
+    userData,
+    appPath: app ? app.path : null,
+    binary: bin,
+    running,
+    nodeVersion: process.version,
+    inspect: { port, alive: !!(await Inspect.Session.probe(port)) },
+    files,
+  };
+}
+
+(async () => {
+  const { positional, flags } = parseArgs(process.argv.slice(2));
+  const cmd = positional[0] || 'help';
+  const rest = positional.slice(1);
+  const targets = rest;
+
+  if (cmd === 'help' || flags.help) return console.log(HELP);
+
+  if (cmd === 'bridge') {
+    console.error('bridge（CDP 补丁）已移除：现在不需要改 App 文件。');
+    console.error('用 ./todoctl app status|start|restart|quit 管理 App 与本地接口。');
+    process.exitCode = 2;
+    return;
+  }
+
+  if (cmd === 'app') {
+    try {
+      const info = await appCommand(rest[0] || 'status', flags, rest[1]);
+      console.log(JSON.stringify(info, null, 2));
+      process.exitCode = info.ok === false ? 1 : 0;
+    } catch (e) {
+      console.error('✗ ' + e.message);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  let s;
+  try {
+    // 驱动选择：写操作 → N2（inspect，必要时自动带参启动/重启）；读操作 → N1（文件，零依赖）
+    if (!isReadOnly(cmd, rest, flags) || flags.live) {
+      s = await openLive(flags);
+    } else {
+      try {
+        s = FileSession.open();
+      } catch (e) {
+        log('! 本地文件读不了（' + String(e.message).split('\n')[0] + '），改为连接 App…');
+        s = await openLive(flags);
+      }
+    }
+    let result;
+    let kind;
+
+    switch (cmd) {
+      case 'list': case 'ls': case 'today':
+        result = await C.list(s, flags); kind = 'items'; break;
+      case 'show': case 'get':
+        result = await C.show(s, rest[0]); break;
+      case 'add': case 'new':
+        result = await C.add(s, rest.join(' '), flags); break;
+      case 'edit': case 'update':
+        result = await C.edit(s, rest[0], flags); break;
+      case 'done': case 'complete':
+        result = await C.toggle(s, targets, true, flags.all === true); break;
+      case 'undone': case 'undo':
+        result = await C.toggle(s, targets, false, flags.all === true); break;
+      case 'rm': case 'delete': case 'del':
+        result = await C.remove(s, targets, flags.purge === true, flags.all === true); break;
+      case 'restore':
+        result = await C.restore(s, targets, flags.all === true); break;
+      case 'carry':
+        result = await C.carry(s, flags); break;
+      case 'trash':
+        if (flags.clear) result = await C.trashClear(s, flags);
+        else { result = await C.list(s, { ...flags, trash: true, date: 'all' }); kind = 'items'; }
+        break;
+      case 'top': case 'bottom':
+        result = await C.sortEdge(s, rest[0], cmd); break;
+      case 'subs':
+        result = await C.subsList(s, rest[0]); kind = 'subs'; break;
+      case 'sub': {
+        const action2 = rest[0];
+        if (action2 === 'add') { result = await C.subAdd(s, rest[1], rest.slice(2).join(' ')); }
+        else if (action2 === 'rm' || action2 === 'delete') { result = await C.subRm(s, rest[1], rest.slice(2).join(' ')); }
+        else { result = await C.subToggle(s, rest[0], rest.slice(1).join(' '), flags.undone === true); }
+        break;
+      }
+      case 'remind': {
+        result = await C.remind(s, rest[0], rest[1], flags);
+        break;
+      }
+      case 'repeats': case 'repeat-list':
+        result = await C.repeats(s, flags); kind = 'repeats'; break;
+      case 'repeat': {
+        const sub2 = rest[0];
+        if (sub2 !== 'rm' && sub2 !== 'delete') throw new Error('用法: ./todoctl repeat rm <目标> [--yes]');
+        result = await C.repeatRemove(s, rest[1], flags);
+        if (result && result.needConfirm) {
+          console.error('将删除整组 ' + result.preview.count + ' 条：' + result.preview.content +
+            '（' + result.preview.first + ' → ' + result.preview.last + '）');
+          console.error('确认请重跑并加 --yes');
+        }
+        break;
+      }
+      case 'cats': case 'categories':
+        result = await C.cats(s); kind = 'cats'; break;
+      case 'folders':
+        result = await C.folders(s, flags); kind = 'folders'; break;
+      case 'folder': {
+        const action = rest[0];
+        if (!['add', 'rename', 'rm', 'delete'].includes(action)) throw new Error('用法: ./todoctl folder add|rename|rm ...');
+        result = await C.folderWrite(s, action === 'delete' ? 'rm' : action, rest.slice(1), flags);
+        kind = 'folders';
+        break;
+      }
+      case 'cat': {
+        const action = rest[0];
+        if (!['add', 'rename', 'rm', 'delete', 'move'].includes(action)) throw new Error('用法: ./todoctl cat add|rename|rm|move ...');
+        result = await C.catWrite(s, action === 'delete' ? 'rm' : action, rest.slice(1), flags);
+        kind = 'cats';
+        break;
+      }
+      case 'tags':
+        result = await C.tags(s); kind = 'tags'; break;
+      case 'tag': {
+        const target = rest[0];
+        const plus = []
+          .concat(flags.add ? String(flags.add).split(',') : [])
+          .concat(rest.slice(1).filter((x) => x.startsWith('+')).map((x) => x.slice(1)));
+        const minus = []
+          .concat(flags.del ? String(flags.del).split(',') : [])
+          .concat(rest.slice(1).filter((x) => x.startsWith('-')).map((x) => x.slice(1)));
+        if (!target || (!plus.length && !minus.length)) throw new Error('用法: ./todoctl tag <待办> --add 标签 --del 标签');
+        result = await C.edit(s, target, { '+tag': plus.join(','), '-tag': minus.join(',') });
+        break;
+      }
+      case 'search': {
+        const q = rest.join(' ');
+        if (!q) throw new Error('用法: ./todoctl search 关键词');
+        result = await C.list(s, { ...flags, search: q, date: 'all', 'with-done': true });
+        kind = 'items';
+        break;
+      }
+      case 'overdue':
+        result = await C.list(s, { ...flags, overdue: true, date: 'all' }); kind = 'items'; break;
+      case 'stats': result = await C.stats(s); break;
+      case 'tomato': result = await C.tomato(s); break;
+      case 'settings':
+        if (rest[0] === 'set') result = await C.settingsWrite(s, rest[1], rest[2]);
+        else result = await C.settings(s, rest[0]);
+        break;
+      case 'notify':
+        result = await C.notify(s, rest[0], rest.slice(1).join(' ')); break;
+      case 'report':
+        result = await C.report(s, rest[0]); break;
+      case 'export': {
+        if (flags.xlsx) { result = await C.exportXlsx(s, flags); break; }
+        const data = await C.list(s, { ...flags, date: flags.date || 'all', 'with-done': true, limit: 0 });
+        const format = String(flags.format || 'csv');
+        const out = flags.out && flags.out !== true ? String(flags.out) : null;
+        const rows = data.items;
+        let text;
+        if (format === 'json') text = JSON.stringify(rows, null, 2);
+        else {
+          const cols = ['id', 'content', 'done', 'date', 'cat', 'tags', 'desc', 'subProgress', 'difficulty', 'reminder'];
+          const esc = (v) => {
+            const s2 = v === null || v === undefined ? '' : String(v);
+            return /[",\n]/.test(s2) ? '"' + s2.replace(/"/g, '""') + '"' : s2;
+          };
+          text = [cols.join(',')]
+            .concat(rows.map((r) => cols.map((c) => esc(Array.isArray(r[c]) ? r[c].join(' ') : r[c])).join(',')))
+            .join('\n');
+        }
+        if (out) { require('fs').writeFileSync(out, text); result = { ok: true, format, file: out, count: rows.length }; }
+        else { s.close(); process.stdout.write(text + '\n'); process.exitCode = 0; return; }
+        break;
+      }
+      case 'raw': {
+        const text = await s.runText(rest.join(' '));
+        s.close();
+        process.stdout.write(text + (text.endsWith('\n') ? '' : '\n'));
+        process.exitCode = 0;
+        return;
+      }
+      default:
+        console.log(HELP);
+        s.close();
+        process.exit(2);
+    }
+
+    output(result, flags, kind);
+    s.close();
+    // 注意：大输出必须让 Node 自然退出（process.exit 会截断管道里的待写数据）
+    process.exitCode = result && result.ok === false ? 1 : 0;
+  } catch (e) {
+    if (s) s.close();
+    console.error('✗ ' + e.message);
+    process.exitCode = 1;
+  }
+})();
